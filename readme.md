@@ -29,6 +29,9 @@ sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 None of the required 'gtkmm-3.0>=0.29.2' found
 sudo apt install libgtkmm-3.0-dev
 
+By not providing "Findfmt.cmake" in CMAKE_MODULE_PATH this project has asked CMake to find a package configuration file provided by "fmt", but CMake did not find one.
+sudo apt install libfmt-dev
+
 By not providing "Findament_cmake.cmake" in CMAKE_MODULE_PATH this project has asked CMake to find a package configuration file provided by "ament_cmake", but CMake did not find one.
 source /opt/ros/humble/setup.bash
 ```
