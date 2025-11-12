@@ -131,3 +131,25 @@ ros2 topic pub -1 /ecu yunle_msgs/msg/Ecu "{header: 'auto', motor: 0.0 ,steer: 3
 ```
 ros2 launch launch/standard.py
 ```
+## 使用ros1的slam算法
+考虑使用[4DRadarSLAM](https://github.com/zhuge2333/4DRadarSLAM)算法进行测试，但是该算法仅支持ros1，因此需要ros1和ros2同时在ubuntu22中运行(ros1官方不支持ubuntu20之后的版本)并相互通讯。可以从源码编译或使用他人编译的ros1版本，下面是使用autolabor提供的包含必要功能的ros1
+```
+echo "deb [trusted=yes arch=amd64] http://deb.repo.autolabor.com.cn jammy main" | sudo tee /etc/apt/sources.list.d/autolabor.list
+sudo apt update
+sudo apt install ros-noetic-autolabor
+```
+同时安装ros1和ros2之后，可以设置`.bashrc`文件让终端每次打开时可以手动选择要使用的版本
+```
+nano ~/.bashrc
+```
+```
+echo "ros noetic(1) or ros2 foxy(2)?"
+read edition
+if [ "$edition" -eq "1" ];then
+  source /opt/ros/noetic/setup.bash
+else
+  source /opt/ros/humble/setup.bash
+fi
+```
+为了让ros1和ros2相互通讯，可以使用[ros1_bridge](https://github.com/ros2/ros1_bridge)
+
