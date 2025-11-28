@@ -1,0 +1,39 @@
+# Copyright (c) Sensrad 2023-2024
+
+visualizer: "rviz2" # {rviz2, foxglove-studio or foxglove-websocket}. In docker/launcher only rviz2 is supported
+visualizer_config: "default.rviz" # Path to rviz2 config file
+rectify: false # If true and if rviz2 visualization, rectify camera images
+
+base_link: "map" # Parent frame of all sensors
+
+front_radar:
+  sensor: "radar"
+  radar_topic_name: "/hugin_raf" # Allows user to set name-space of radar data
+  live: true # If true, connect to the radar. If false, use recorded data
+  perception: true # If true run perception on this radar
+  dynamic: true # Set to true if radar is moving
+  vertical_height: 1.0 # Vertical height in meters of the radar installation above the ground
+  elevation_angle: 0.0 # Elevation angle [deg] of the radar relative boresight. Positive angles defined upwards
+  id: 1 # Unique ID of the sensor, used for naming of topics
+  radar_ip: 192.168.0.40 # IP address of the radar
+  udp_data_port: 6003 # UDP port that the radar sends point-cloud to
+  udp_log_port: 6010 # UDP port that the radar sends log messages to
+  tcp_ctrl_port: 6001 # TCP port that the radar sends control messages to
+  translation: [0.0, 0.0, 0.0] # Translation [m] of the radar relative "map"
+  rotation: [0., 0., 0.] # Orientation [rad] of the radar relative "map"
+  fw: 1.8.1 # Firmware version of the sensor (1.7.1, 1.8.1, or 1.8.5)
+
+
+axis_camera:
+  id: 1
+  sensor: "camera"
+  camera_topic_name: "/hugin_cam" # Allows user to set name-space of camera data
+  live: false # If true, connect to the camera.
+  type: "axis" # Controls which node to start: here only "axis" is supported
+  variant: "axis_temp" # Modify config/camera_intrinsics.yaml to match your camera
+  ip: "192.168.0.90"
+  user: "sensrad"
+  password: "sensrad"
+  format: "jpeg"
+  translation: [0.0, 0.0, 0.08] # Translation [m] of the camera relative base_link
+  rotation: [-1.57, 0.0, 0.0] # Orientation [rad] of the camera relative base_link
