@@ -1,4 +1,5 @@
 # 简介
+<<<<<<< HEAD
 由于原有文档不是错误百出(底盘)就是啥都没有(雷达)，在这里重写一份能看的。
 
 毫米波雷达必须使用ros2 humble ubuntu22.04才能驱动，底盘有ros1和ros2两个版本。由于计划未来使用ros2开发因此底盘驱动包含在ros2系统中了。
@@ -7,6 +8,15 @@
 + can转以太网：192.168.0.10
 + ros1上位机：192.168.0.190
 + ros2上位机：192.168.0.191
+=======
+使用ros2，可以驱动毫米波雷达和小车底盘。由于原有文档不是错误百出(底盘)就是啥都没有(雷达)，在这里重写一份能看的
+
+注意：毫米波雷达驱动必须在x86架构CPU下运行，仅支持ros2版本，ubuntu版本必须为22，否则编译无法通过
+
+# ip地址
++ can转以太网：192.168.0.10
++ 上位机：192.168.0.191
+>>>>>>> 8b3586147dec4cb6a950882a0cafc003e3a13d78
 + 毫米波雷达：192.168.0.40
 
 # 底盘
@@ -29,6 +39,15 @@ sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 
 None of the required 'gtkmm-3.0>=0.29.2' found
 sudo apt install libgtkmm-3.0-dev
+<<<<<<< HEAD
+=======
+
+By not providing "Findfmt.cmake" in CMAKE_MODULE_PATH this project has asked CMake to find a package configuration file provided by "fmt", but CMake did not find one.
+sudo apt install libfmt-dev
+
+By not providing "Findament_cmake.cmake" in CMAKE_MODULE_PATH this project has asked CMake to find a package configuration file provided by "ament_cmake", but CMake did not find one.
+source /opt/ros/humble/setup.bash
+>>>>>>> 8b3586147dec4cb6a950882a0cafc003e3a13d78
 ```
 ## launch配置
 |       名称       |                可选值                 |            释义            |
