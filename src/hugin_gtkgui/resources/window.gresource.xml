@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/window">
+    <file preprocess="xml-stripblanks">window.glade</file>
+  </gresource>
+    <gresource prefix="/image">
+    <file>sensrad_eye_magenta_small.png</file>
+    <file>sensrad_logotype_small.png</file>
+  </gresource>
+</gresources>

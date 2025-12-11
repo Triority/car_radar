@@ -1,0 +1,4 @@
+uint8 sequence_type
+---
+bool success
+string message

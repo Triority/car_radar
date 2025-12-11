@@ -1,0 +1,22 @@
+# Sequence Type.
+
+# ROS2 does not have an enum type. This is the standard
+# way.
+
+uint8  IDLESEQ = 0
+uint8  COARSESHORTSEQ = 1
+uint8  COARSEMIDSEQ = 2
+uint8  COARSELONGSEQ = 3
+uint8  FINESHORTSEQ = 4
+uint8  FINEMIDSEQ = 5
+uint8  FINELONGSEQ = 6
+uint8  CALIBRATIONSEQ = 7
+uint8  LABSEQ = 8
+uint8  DELAYCALIBRATIONSEQ = 9
+uint8  COARSEULTRALONGSEQ = 10
+uint8  FINEULTRALONGSEQ = 11
+uint8  USERCONFIGURESEQ1 = 12
+uint8  USERCONFIGURESEQ2 = 13
+uint8  CALIBRATIONFASTSEQ = 14
+
+uint8 data
