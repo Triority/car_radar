@@ -19,3 +19,5 @@
     ```
     ros2 run radar_filter_ai radar_filter_node --ros-args -p use_sim_time:=true
     ```
+
+## 调试命令
