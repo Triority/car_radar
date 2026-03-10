@@ -10,10 +10,10 @@
     ```
 + TF:
     ```
-    ros2 run tf2_ros static_transform_publisher 0 0 0 -1.5708 0 0 base_link map
+    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --yaw -1.5708 --pitch 0 --roll 0 --frame-id base_link --child-frame-id radar_1
     ```
     ```
-    ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 lidar_link rslidar
+    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0.1 --yaw 0 --pitch 0 --roll 0 --frame-id base_link --child-frame-id rslidar
     ```
 + radar_filter_node
     ```
