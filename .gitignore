@@ -2,3 +2,4 @@ build
 install
 log
 bag/*/*.db3
+radar_dataset

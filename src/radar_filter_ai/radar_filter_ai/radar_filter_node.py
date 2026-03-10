@@ -1,122 +1,211 @@
 import rclpy
 from rclpy.node import Node
 import numpy as np
+import os
 import sensor_msgs_py.point_cloud2 as pc2
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import PointCloud2, PointField
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from tf2_ros import Buffer, TransformListener, TransformException
-from tf2_sensor_msgs.tf2_sensor_msgs import do_transform_cloud  # 核心工具：点云变换
+from scipy.spatial.transform import Rotation as R
 
 class RadarFilter4DNode(Node):
     def __init__(self):
         super().__init__('radar_filter_node')
 
         # --- 1. 参数配置 ---
-        self.base_dist_threshold = 0.15  # 基础距离误差范围
-        self.dist_coeff = 0.05           # 距离动态系数（远处的点允许更大的误差）
-        self.angle_threshold_rad = np.radians(5.0) # 角度搜索锥半角
+        self.declare_parameter('save_data', True)
+        self.declare_parameter('save_path', './radar_dataset')
+        self.declare_parameter('file_prefix', 'run1')
+        
+        self.save_data = self.get_parameter('save_data').value
+        self.save_path = self.get_parameter('save_path').value
+        self.file_prefix = self.get_parameter('file_prefix').value
 
-        # --- 2. TF 监听基础设施 ---
+        # 匹配算法阈值
+        self.base_dist_threshold = 0.2
+        self.dist_coeff = 0.05
+        self.angle_threshold_rad = np.radians(3.0)
+
+        # --- 2. 存储路径初始化 ---
+        if self.save_data:
+            self.points_dir = os.path.join(self.save_path, 'points')
+            self.labels_dir = os.path.join(self.save_path, 'labels')
+            os.makedirs(self.points_dir, exist_ok=True)
+            os.makedirs(self.labels_dir, exist_ok=True)
+            
+        self.frame_points_buffer = [] # 暂存点云特征数据
+        self.frame_labels_buffer = [] # 暂存标签数据
+        self.file_count = 0
+
+        # --- 3. TF 与 订阅 ---
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.latest_lidar_msg = None
 
-        # --- 3. QoS 配置 ---
-        # 使用 RELIABLE 确保在网络负载高时不丢弃关键包
         qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
-            depth=10,
+            depth=5,
             durability=DurabilityPolicy.VOLATILE
         )
 
         self.lidar_sub = self.create_subscription(PointCloud2, '/rslidar_points', self.lidar_callback, qos)
         self.radar_sub = self.create_subscription(PointCloud2, '/oden_1/extended_point_cloud', self.radar_callback, qos)
-        self.publisher = self.create_publisher(PointCloud2, '/radar/filtered_points', qos)
+        self.publisher = self.create_publisher(PointCloud2, '/radar/labeled_points', qos)
 
-        self.get_logger().info("Radar Filter Node Started (Using do_transform_cloud)")
+        self.get_logger().info(f"Node Started. Storage: {self.save_path}")
 
     def lidar_callback(self, msg):
-        # 简单缓存最新的激光点云
         self.latest_lidar_msg = msg
+
+    def save_to_disk(self):
+        """执行保存逻辑：每100帧一个文件，不满20帧丢弃"""
+        num_frames = len(self.frame_points_buffer)
+        if num_frames < 20:
+            self.get_logger().warn(f"Buffer has only {num_frames} frames (<20), discarding.")
+            self.frame_points_buffer.clear()
+            self.frame_labels_buffer.clear()
+            return
+
+        filename = f"{self.file_prefix}_{self.file_count:03d}.npy"
+        
+        # 保存点云特征 [N, 8] 的对象数组
+        np.save(os.path.join(self.points_dir, filename), 
+                np.array(self.frame_points_buffer, dtype=object))
+        
+        # 保存标签 [N, 1] 的对象数组
+        np.save(os.path.join(self.labels_dir, filename), 
+                np.array(self.frame_labels_buffer, dtype=object))
+
+        self.get_logger().info(f"Disk Write: Saved {num_frames} frames to {filename}")
+        
+        # 重置
+        self.frame_points_buffer.clear()
+        self.frame_labels_buffer.clear()
+        self.file_count += 1
 
     def radar_callback(self, radar_msg):
         if self.latest_lidar_msg is None:
             return
 
-        # --- A. 坐标对齐 (TF) ---
+        # 1. 坐标变换获取 (Lidar -> Radar)
         try:
-            # 查找从 Lidar 到 Radar 的变换矩阵
-            # 关键：使用 radar_msg.header.stamp 进行时间同步对齐
             trans = self.tf_buffer.lookup_transform(
-                radar_msg.header.frame_id,      # 目标坐标系 (Radar)
-                self.latest_lidar_msg.header.frame_id, # 源坐标系 (Lidar)
-                radar_msg.header.stamp,         # 匹配毫米波的时间戳
-                timeout=rclpy.duration.Duration(seconds=0.1))
+                radar_msg.header.frame_id,      
+                self.latest_lidar_msg.header.frame_id, 
+                rclpy.time.Time()) 
             
-            # 使用 ROS 2 官方工具直接变换整个激光点云消息
-            # 这一步之后，aligned_lidar_msg 的坐标系已经和 radar 坐标系完全重合
-            aligned_lidar_msg = do_transform_cloud(self.latest_lidar_msg, trans)
-
-        except TransformException as ex:
-            # 过滤掉启动初期的 TF 未就绪错误
+            l_pts_raw = pc2.read_points_numpy(self.latest_lidar_msg, field_names=("x", "y", "z"), skip_nans=True)
+            q = trans.transform.rotation
+            rotation = R.from_quat([q.x, q.y, q.z, q.w])
+            t_vec = np.array([trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z])
+            l_pts_in_radar = rotation.apply(l_pts_raw) + t_vec
+        except Exception:
             return
 
-        # --- B. 数据提取与 NumPy 化 ---
-        # 激光：提取 (N, 3) 的 float32 矩阵。read_points_numpy 速度极快
-        l_pts = pc2.read_points_numpy(aligned_lidar_msg, field_names=("x", "y", "z"), skip_nans=True)
-        if l_pts.size == 0: return
-        
-        # 毫米波：先转成 list 方便索引，再提数值用于计算
-        radar_raw_list = list(pc2.read_points(radar_msg, skip_nans=True))
-        r_pts = np.array([[p[0], p[1], p[2]] for p in radar_raw_list])
-        total_radar_count = len(radar_raw_list)
+        # 2. 提取激光极坐标用于匹配
+        l_r = np.linalg.norm(l_pts_in_radar, axis=1)
+        l_az = np.arctan2(l_pts_in_radar[:, 1], l_pts_in_radar[:, 0])
+        l_el = np.arctan2(l_pts_in_radar[:, 2], np.linalg.norm(l_pts_in_radar[:, :2], axis=1))
+
+        # 3. 提取毫米波雷达所有点及指定特征
+        # 对应 Channels: x, y, z, power, doppler, range (由 topic echo 确认)
+        gen = pc2.read_points(radar_msg, field_names=("x", "y", "z", "power", "doppler", "range"), skip_nans=True)
+        radar_data_list = list(gen)
+        total_radar_count = len(radar_data_list)
         if total_radar_count == 0: return
 
-        # --- C. 坐标转换：笛卡尔 (x,y,z) -> 球坐标 (r, az, el) ---
-        # 激光点极坐标化
-        l_r = np.linalg.norm(l_pts, axis=1)
-        l_azimuth = np.arctan2(l_pts[:, 1], l_pts[:, 0])
-        l_elevation = np.arctan2(l_pts[:, 2], np.linalg.norm(l_pts[:, :2], axis=1))
+        # 预计算毫米波极坐标
+        r_coords = np.array([[p[0], p[1], p[2]] for p in radar_data_list]) # x, y, z
+        r_r = np.linalg.norm(r_coords, axis=1)
+        r_az = np.arctan2(r_coords[:, 1], r_coords[:, 0])
+        r_el = np.arctan2(r_coords[:, 2], np.linalg.norm(r_coords[:, :2], axis=1))
 
-        # 毫米波点极坐标化
-        r_r = np.linalg.norm(r_pts, axis=1)
-        r_azimuth = np.arctan2(r_pts[:, 1], r_pts[:, 0])
-        r_elevation = np.arctan2(r_pts[:, 2], np.linalg.norm(r_pts[:, :2], axis=1))
-
-        # --- D. 空间交叉验证过滤 ---
-        verified_indices = []
+        # 4. 匹配逻辑
+        verified_indices = set()
         for i in range(total_radar_count):
-            # 动态距离阈值：目标越远，允许的径向误差越大
             curr_th = self.base_dist_threshold + (r_r[i] * self.dist_coeff)
-            
-            # 1. 距离粗筛：找出所有到原点距离相近的激光点
             dist_mask = np.abs(l_r - r_r[i]) < curr_th
-            
             if np.any(dist_mask):
-                # 2. 角度精筛：在距离接近的点中，计算方位角和俯仰角偏差
-                d_az = np.abs(l_azimuth[dist_mask] - r_azimuth[i])
-                # 处理角度环绕 (π 和 -π 是同一个方向)
+                d_az = np.abs(l_az[dist_mask] - r_az[i])
                 d_az = np.where(d_az > np.pi, 2*np.pi - d_az, d_az)
-                
-                d_el = np.abs(l_elevation[dist_mask] - r_elevation[i])
-                
-                # 如果存在激光点在毫米波点的“搜索锥”内，则认为该点是真实的
+                d_el = np.abs(l_el[dist_mask] - r_el[i])
                 if np.any((d_az < self.angle_threshold_rad) & (d_el < self.angle_threshold_rad)):
-                    verified_indices.append(i)
+                    verified_indices.add(i)
 
-        # --- E. 统计、发布与打印 ---
-        verified_count = len(verified_indices)
-        if verified_count > 0:
-            # 根据索引提取原始毫米波数据（包含 4D 速度、强度等所有字段）
-            verified_points_raw = [radar_raw_list[idx] for idx in verified_indices]
-            filtered_msg = pc2.create_cloud(radar_msg.header, radar_msg.fields, verified_points_raw)
-            self.publisher.publish(filtered_msg)
+        # 5. 构建保存用的数据结构 [N, 8] 和 [N, 1]
+        # Channels: [x, y, z, r, az, el, doppler, power]
+        current_frame_points = []
+        current_frame_labels = []
+        
+        # 用于 ROS 发布的数据
+        labeled_ros_list = []
 
-        # 打印统计信息
-        percentage = (verified_count / total_radar_count) * 100 if total_radar_count > 0 else 0.0
+        for i, p in enumerate(radar_data_list):
+            is_real = 1.0 if i in verified_indices else 0.0
+            
+            # 提取 8 通道特征
+            # p 顺序: 0:x, 1:y, 2:z, 3:power, 4:doppler, 5:range
+            pt_feature = [
+                p[0], p[1], p[2],        # x, y, z
+                r_r[i], r_az[i], r_el[i],# r, az, el
+                p[4],                    # doppler
+                p[3]                     # power
+            ]
+            current_frame_points.append(pt_feature)
+            current_frame_labels.append([is_real])
+            
+            # 发布用数据 (保留所有原始字段 + label)
+            # 这里需要读取全部原始字段，不仅是上面选出的6个
+            # 为了效率，我们直接复用上面的计算结果
+            labeled_ros_list.append(list(p) + [is_real])
+
+        # 6. 数据暂存
+        if self.save_data:
+            self.frame_points_buffer.append(np.array(current_frame_points, dtype=np.float32))
+            self.frame_labels_buffer.append(np.array(current_frame_labels, dtype=np.float32))
+            
+            # 每 100 帧分段保存
+            if len(self.frame_points_buffer) >= 100:
+                self.save_to_disk()
+
+        # --- 7. 发布 labeled 点云 (优化版：统一使用 Float32 以确保 RViz 兼容) ---
+        from sensor_msgs.msg import PointField
+        
+        # 重新定义发布给 RViz 的字段，全部设为 Float32 (datatype=7)
+        # 这样可以避免原始点云中 1字节/2字节 字段导致的对齐错误
+        rviz_fields = [
+            PointField(name="x", offset=0, datatype=7, count=1),
+            PointField(name="y", offset=4, datatype=7, count=1),
+            PointField(name="z", offset=8, datatype=7, count=1),
+            PointField(name="doppler", offset=12, datatype=7, count=1),
+            PointField(name="power", offset=16, datatype=7, count=1),
+            PointField(name="label", offset=20, datatype=7, count=1),
+        ]
+
+        rviz_points_list = []
+        for i, p in enumerate(radar_data_list):
+            # 这里的 p 是我们之前提取的 6 个字段: (x, y, z, power, doppler, range)
+            is_real = 1.0 if i in verified_indices else 0.0
+            # 构造匹配 rviz_fields 的列表: [x, y, z, doppler, power, label]
+            rviz_points_list.append([
+                float(p[0]), float(p[1]), float(p[2]), 
+                float(p[4]), float(p[3]), is_real
+            ])
+
+        # 创建消息
+        labeled_msg = pc2.create_cloud(radar_msg.header, rviz_fields, rviz_points_list)
+        
+        # 确保 header.frame_id 正确
+        labeled_msg.header = radar_msg.header 
+        
+        self.publisher.publish(labeled_msg)
+
+        # 终端显示
+        percentage = (len(verified_indices) / total_radar_count) * 100 if total_radar_count > 0 else 0
         self.get_logger().info(
-            f"Verified: {verified_count}/{total_radar_count} ({percentage:.1f}%)"
+            f"Matching: {len(verified_indices)}/{total_radar_count} ({percentage:.1f}%) | "
+            f"Seq: {len(self.frame_points_buffer)}/100"
         )
 
 def main(args=None):
@@ -127,9 +216,11 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        # 程序结束时保存缓冲区剩余数据
+        if node.save_data:
+            node.save_to_disk()
         node.destroy_node()
         rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
-    

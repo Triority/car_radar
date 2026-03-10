@@ -1,8 +1,12 @@
 # 毫米波雷达点云匹配与滤波
+## build
+```
+colcon build --packages-select radar_filter_ai
+```
 ## 启动命令(path:~/Desktop/car_radar)
 + rviz
     ```
-    rviz2 bag/rviz.rviz
+    rviz2 -d bag/label.rviz --ros-args -p use_sim_time:=true
     ```
 + bag
     ```
@@ -10,10 +14,10 @@
     ```
 + TF:
     ```
-    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --yaw -1.5708 --pitch 0 --roll 0 --frame-id base_link --child-frame-id radar_1
+    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --yaw -1.5708 --pitch 0 --roll 0 --frame-id base_link --child-frame-id radar_1 --ros-args -p use_sim_time:=true
     ```
     ```
-    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0.1 --yaw 0 --pitch 0 --roll 0 --frame-id base_link --child-frame-id rslidar
+    ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0.1 --yaw 0 --pitch 0 --roll 0 --frame-id base_link --child-frame-id rslidar --ros-args -p use_sim_time:=true
     ```
 + radar_filter_node
     ```
